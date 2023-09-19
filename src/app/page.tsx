@@ -142,8 +142,8 @@ const Home = () => {
         ...prevState.lineItems,
         {
           id: crypto.randomUUID(),
-          lineItemType: 'PHYSICAL_PRODUCT',
-          variantId: '',
+          lineItemType: 'CUSTOM',
+          variantId: null,
           title: '',
           quantity: 1,
           unitPricePaid: {

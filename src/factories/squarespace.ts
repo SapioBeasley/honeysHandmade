@@ -54,7 +54,7 @@ export const SquarespaceApi = () => {
 
   const orders = {
     create: (payload: Order): Promise<Order> =>
-      fetchFromApi(`/commerce/ordersx`, 'POST', payload),
+      fetchFromApi(`/commerce/orders`, 'POST', payload),
   };
 
   const products = {

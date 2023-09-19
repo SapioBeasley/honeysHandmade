@@ -1,3 +1,4 @@
+import { ShippingLineSchema } from './../../../schemas/shippingLine';
 import { OrderSchema } from '@/schemas/order';
 import { CurrencyValue } from '@/types/currencyValue';
 import { LineItem } from '@/types/lineItem';
@@ -36,7 +37,22 @@ export const POST = async (req: Request) => {
         if (isNaN(quantity)) {
           throw new Error('Quantity must be a number');
         }
-        return { ...item, quantity };
+
+        delete item.id;
+        delete item.isManual;
+
+        return {
+          ...item,
+          quantity,
+          ...(item.variantId && {
+            title: null,
+            lineItemType: 'PHYSICAL_PRODUCT',
+          }),
+          ...(!item.variantId && {
+            lineItemType: 'CUSTOM',
+            variantId: null,
+          }),
+        };
       }
     );
 
@@ -45,6 +61,18 @@ export const POST = async (req: Request) => {
       channelName: "Honey's Handmade Order Script",
       grandTotal: calculateGrandTotal(payload),
       lineItems: validatedLineItems,
+      fulfillments: [],
+      ...(payload.shippingAddress && {
+        shippingLines: [
+          {
+            method: 'Flat Rate',
+            amount: {
+              currency: 'USD',
+              value: '0.00',
+            },
+          },
+        ],
+      }),
     });
 
     const order = await SquarespaceApi().orders.create(orderPayload);

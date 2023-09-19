@@ -1,113 +1,406 @@
-import Image from 'next/image'
+'use client';
 
-export default function Home() {
+import AddressInput from '@/components/addressInput';
+import FulfillmentInput from '@/components/fulfillmentInput';
+import LineItemInput from '@/components/lineItemInput';
+import Modal from '@/components/modal';
+import { Fulfillment } from '@/types/fulfillment';
+import { LineItem } from '@/types/lineItem';
+import { Order } from '@/types/order';
+import { Product } from '@/types/product';
+import dayjs from 'dayjs';
+import { useState } from 'react';
+
+const INVENTORY_BEHAVIORS = [
+  { value: 'DEDUCT', label: 'Deduct' },
+  { value: 'SKIP', label: 'Skip' },
+];
+
+const PRICE_TAX_INTERPRETATIONS = [
+  { value: 'EXCLUSIVE', label: 'Exclusive' },
+  { value: 'INCLUSIVE', label: 'Inclusive' },
+];
+
+const Home = () => {
+  const [formData, setFormData] = useState<Order>({
+    channelName: "Honey's Handmade Order Script",
+    priceTaxInterpretation: 'EXCLUSIVE',
+    externalOrderReference: crypto.randomUUID(),
+    createdOn: dayjs().toISOString(),
+    lineItems: [],
+    fulfillments: [
+      {
+        shipDate: dayjs().toISOString(),
+        carrierName: 'USPS',
+        service: 'Standard',
+        trackingNumber: 'N/A',
+      },
+    ],
+    grandTotal: { value: '0.00', currency: 'USD' },
+  });
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [modalContent, setModalContent] = useState<string>('');
+
+  const openModal = (content: string) => {
+    setModalContent(content);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setModalContent('');
+  };
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+
+    const addressMatch = name.match(/(shippingAddress)\[(\w+)\]/);
+    const regexMatch = name.match(/(fulfillments|lineItems)\[(\d+)\]\.(.+)/);
+
+    if (addressMatch) {
+      const objectName = addressMatch[1];
+      const key = addressMatch[2];
+
+      setFormData((prevState) => ({
+        ...prevState,
+        [objectName]: {
+          ...(prevState[objectName as keyof Order] as Record<string, any>),
+          [key]: value,
+        },
+      }));
+    } else if (regexMatch) {
+      const arrayName = regexMatch[1];
+      const index = parseInt(regexMatch[2]);
+      const keyPath = regexMatch[3].split('.'); // Split further to handle nested keys
+
+      setFormData((prevState) => {
+        const newArray = [
+          ...(prevState[arrayName as keyof Order] as (
+            | Fulfillment
+            | LineItem
+          )[]),
+        ];
+
+        let nestedObject: any = newArray[index]; // Start with the item in the array
+        keyPath.forEach((key, idx) => {
+          if (idx === keyPath.length - 1) {
+            nestedObject[key] = value;
+          } else {
+            // Go one level deeper for each key
+            if (!nestedObject[key]) {
+              nestedObject[key] = {};
+            }
+            nestedObject = nestedObject[key];
+          }
+        });
+
+        return {
+          ...prevState,
+          [arrayName]: newArray,
+        };
+      });
+    } else {
+      setFormData((prevState) => ({
+        ...prevState,
+        [name]: value,
+      }));
+    }
+  };
+
+  const handleSubmit = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok) {
+        openModal(`Failed to create order: ${json.message}`);
+        return;
+      }
+
+      openModal('Order created successfully!');
+      return;
+    } catch (error) {
+      openModal('An error occurred.');
+    }
+  };
+
+  const handleAddLineItem = (isManual?: boolean) => {
+    setFormData((prevState) => ({
+      ...prevState,
+      lineItems: [
+        ...prevState.lineItems,
+        {
+          id: crypto.randomUUID(),
+          lineItemType: 'PHYSICAL_PRODUCT',
+          variantId: '',
+          title: '',
+          quantity: 1,
+          unitPricePaid: {
+            currency: 'USD',
+            value: '0.00',
+          },
+          nonSaleUnitPrice: {
+            currency: 'USD',
+            value: '0.00',
+          },
+          isManual: isManual || false,
+        },
+      ],
+    }));
+  };
+
+  const handleAddFulfillment = () => {
+    setFormData((prevState) => ({
+      ...prevState,
+      fulfillments: [
+        ...prevState.fulfillments,
+        {
+          id: crypto.randomUUID(),
+          shipDate: new Date().toISOString(), // Current date-time in ISO 8601 format
+          carrierName: '',
+          service: '',
+          trackingNumber: '',
+          trackingUrl: '', // Made it an empty string since it's optional or can be an empty string
+        },
+      ],
+    }));
+  };
+
+  const handleRemoveLineItem = (id: string) => {
+    setFormData((prevState) => ({
+      ...prevState,
+      lineItems: prevState.lineItems.filter((item) => item.id !== id),
+    }));
+  };
+
+  const handleRemoveFulfillment = (id: string) => {
+    setFormData((prevState) => ({
+      ...prevState,
+      fulfillments: prevState.fulfillments.filter((item, i) => item.id !== id),
+    }));
+  };
+
+  const handleAddManualLineItem = () => {
+    handleAddLineItem(true);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
+    <div className='bg-gray-200 min-h-screen flex items-center justify-center'>
+      <div className='max-w-4xl bg-white border rounded shadow-lg p-8'>
+        <form onSubmit={handleSubmit} className='space-y-6'>
+          <div className='flex flex-wrap -mx-2'>
+            <div className='w-full md:w-1/2 p-2'>
+              {/* <input
+                type='text'
+                name='externalOrderReference'
+                placeholder='External Order Reference'
+                maxLength={200}
+                required
+                className='block w-full p-2 border rounded mt-2'
+                onChange={handleChange}
+              /> */}
+
+              <fieldset className='mt-4 border p-4 rounded'>
+                <legend className='font-bold'>Customer Details</legend>
+                <input
+                  type='email'
+                  name='customerEmail'
+                  placeholder='Customer Email'
+                  className='block w-full p-2 border rounded mt-2'
+                  onChange={handleChange}
+                  required
+                />
+
+                <AddressInput
+                  type='shippingAddress'
+                  handleChange={handleChange}
+                />
+              </fieldset>
+
+              {/* <fieldset className='mt-4 border p-4 rounded'>
+                <legend className='font-bold'>Billing Address</legend>
+                <AddressInput
+                  type='billingAddress'
+                  handleChange={handleChange}
+                />
+              </fieldset> */}
+
+              {/* <div className='flex flex-wrap mt-4'>
+                <div className='w-1/2 pr-2'>
+                  <label htmlFor='fulfilledOn' className='block font-bold'>
+                    Fulfilled on:
+                  </label>
+                  <input
+                    type='datetime-local'
+                    name='fulfilledOn'
+                    placeholder='Fulfilled On'
+                    className='block w-full p-2 border rounded'
+                    onChange={handleChange}
+                  />
+                </div> 
+
+               <div className='w-1/2'>
+                  <label htmlFor='createdOn' className='block font-bold'>
+                    Created On:
+                  </label>
+                  <input
+                    type='datetime-local'
+                    name='createdOn'
+                    placeholder='Created On'
+                    required
+                    className='block w-full p-2 border rounded'
+                    onChange={handleChange}
+                  />
+                </div> 
+              </div> */}
+            </div>
+
+            <div className='w-full md:w-1/2 p-2'>
+              <fieldset className='mt-4 border p-4 rounded'>
+                <legend className='font-bold'>Line Items</legend>
+
+                {formData.lineItems.map((item, index) => (
+                  <div key={item.id} className='mb-4'>
+                    <LineItemInput
+                      index={index}
+                      handleChange={handleChange}
+                      isManual={item.isManual}
+                    />
+
+                    <button
+                      type='button'
+                      onClick={() => handleRemoveLineItem(item.id!)}
+                      className='mt-2 bg-red-500 text-white rounded p-2'
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  type='button'
+                  onClick={() => handleAddLineItem()}
+                  className='bg-blue-500 text-white rounded p-2'
+                >
+                  Add Line Item
+                </button>
+
+                <button
+                  type='button'
+                  onClick={handleAddManualLineItem}
+                  className='bg-blue-500 text-white rounded p-2'
+                >
+                  Add Manual Line Item
+                </button>
+              </fieldset>
+
+              {/* <fieldset className='mt-4 border p-4 rounded'>
+                <legend className='font-bold'>Fulfillments</legend>
+
+                {formData.fulfillments.map((item, index) => (
+                  <div key={item.id} className='mb-4'>
+                    <FulfillmentInput
+                      index={index}
+                      handleChange={handleChange}
+                    />
+                    <button
+                      onClick={() => handleRemoveFulfillment(item.id!)}
+                      className='mt-2 bg-red-500 text-white rounded p-2'
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  onClick={handleAddFulfillment}
+                  className='bg-blue-500 text-white rounded p-2'
+                >
+                  Add Fulfillment
+                </button>
+              </fieldset> 
+
+              <div className='grid grid-cols-2 py-4 gap-4'>
+                 <label
+                  htmlFor='inventoryBehavior'
+                  className='mr-2 align-middle'
+                >
+                  Inventory Behavior:
+                </label>
+                <select
+                  id='inventoryBehavior'
+                  name='inventoryBehavior'
+                  onChange={handleChange}
+                  className='p-2 border rounded'
+                >
+                  {INVENTORY_BEHAVIORS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select> 
+
+                <label
+                  htmlFor='priceTaxInterpretation'
+                  className='mr-2 align-middle'
+                >
+                  Price Tax Interpretation:
+                </label>
+                <select
+                  id='priceTaxInterpretation'
+                  name='priceTaxInterpretation'
+                  required
+                  onChange={handleChange}
+                  className='p-2 border rounded'
+                >
+                  {PRICE_TAX_INTERPRETATIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                <label
+                  htmlFor='shopperFulfillmentNotificationBehavior'
+                  className='mr-2 align-middle'
+                >
+                  Shopper Fulfillment Notification Behavior:
+                </label>
+                <select
+                  id='shopperFulfillmentNotificationBehavior'
+                  name='shopperFulfillmentNotificationBehavior'
+                  onChange={handleChange}
+                  className='p-2 border rounded'
+                >
+                  <option value='SEND'>Send</option>
+                  <option value='SKIP'>Skip</option>
+                </select> 
+              </div> */}
+            </div>
+          </div>
+
+          <input
+            type='submit'
+            value='Submit Order'
+            className='px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'
+          />
+        </form>
       </div>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      {isModalOpen && <Modal content={modalContent} onClose={closeModal} />}
+    </div>
+  );
+};
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore the Next.js 13 playground.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
-}
+export default Home;
